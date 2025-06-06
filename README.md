@@ -1,1 +1,132 @@
-"# narrative_agent" 
+# Narrative Agent
+
+An algorithmic trading agent that analyzes market narratives and their associated price movements to make trading decisions, with a web-based UI (http://34.216.205.222:8000/) for configuration, backtesting and real-time performance visualization.
+
+## Overview
+
+The Narrative Agent uses historical patterns in market narratives (news, events, sentiment) to predict future price movements. When a new narrative appears that is similar to historical narratives, the agent uses the correlation between past price positions and returns to generate trading signals.
+
+## SentiChain analytics and data
+
+The Narrative Agent directly pulls SentiChain's pre-processed market narratives (this process involves SentiChain's in-house AI Agents) and minute-level price data.
+
+## Web UI
+
+- **Interactive Configuration**: Configure agents through an intuitive web interface
+- **Real-time Backtesting**: Watch your agent's performance update live during backtests
+- **Performance Visualization**: Interactive charts showing returns, drawdown, and other metrics
+
+## Key Features
+
+- **Pattern Recognition**: Identifies similar narratives based on keyword overlap
+- **Price Position Analysis**: Calculates relative price positions over configurable look-back periods
+- **Correlation-Based Signals**: Uses Pearson correlation between price positions and returns
+- **Position Management**: Automatic position entry/exit with configurable hold periods
+- **Risk Management**: Built-in transaction costs and position tracking
+- **Performance Analytics**: Comprehensive metrics including returns, drawdown, and volatility
+
+## Installation
+
+### Quick Start with UI (Recommended)
+
+#### Docker
+```bash
+git clone https://github.com/ruitao-edward-chen/narrative_agent.git
+cd narrative_agent
+docker-compose up -d
+```
+
+Then open your browser to `http://localhost:8000`
+
+### Install with Development Dependencies
+
+```bash
+pip install -e ".[dev]"
+```
+
+## Quick Start
+
+```python
+from narrative_agent import NarrativeAgent, NarrativeAgentConfig
+
+# Configure the agent
+config = NarrativeAgentConfig(
+    ticker="BTC",
+    look_back_period=6,      # 6 hours
+    hold_period=1,           # 1 hour
+    transaction_cost=10,     # 10 basis points
+    count_common_threshold=5 # 5 common keywords
+)
+
+# Create agent
+agent = NarrativeAgent(config, api_key="your-api-key")
+
+# Run daily updates
+agent.update("2025-02-01T00:00:00")
+
+# Get performance metrics
+df = agent.get_performance_dataframe()
+```
+
+## Trading Logic
+
+1. **Narrative Analysis**: When a new narrative with a pattern is detected, the agent searches for similar historical narratives
+2. **Price Position Calculation**: For each narrative, calculate where the price was relative to its recent range
+3. **Correlation Analysis**: Compute correlation between historical price positions and subsequent returns
+4. **Signal Generation**:
+   - Long (1): High price position (>0.5) with positive correlation
+   - Short (-1): Low price position (<0.5) with negative correlation
+   - No position (0): Otherwise
+
+## Position Management
+
+- Only one position can be active at a time
+- New positions (1 or -1) override existing positions
+- Positions are automatically closed after the hold period
+- Transaction costs are applied on both entry and exit
+
+## Running a Backtest
+
+```bash
+python examples/backtest_example.py
+```
+
+Or after installation:
+
+```bash
+narrative-agent-backtest
+```
+
+## Using the Web UI
+
+Once the application is running:
+
+1. **Configure Your Agent**:
+   - Select ticker (BTC)
+   - Set look-back and hold periods
+   - Configure transaction costs and keyword thresholds
+   - Set stop loss and stop gain (optional)
+   - Enter your SentiChain API key
+
+2. **Run Backtest**:
+   - Choose start date and duration
+   - Click "Start Backtest"
+   - Watch real-time performance updates
+
+3. **Analyze Results**:
+   - View live updating performance charts
+   - Monitor key metrics (returns, drawdown, Sharpe ratio)
+   - Compare multiple backtests
+
+## API Requirements
+
+The agent requires a SentiChain API key for accessing narrative and price data. Sign up at [https://sentichain.com](https://sentichain.com) to get your API key.
+
+## Performance Metrics
+
+The agent tracks and reports:
+- Total and per-position returns
+- Maximum drawdown
+- Annualized volatility
+- Win rate
+- Average return per position
