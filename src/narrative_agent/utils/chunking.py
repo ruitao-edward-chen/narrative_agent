@@ -10,17 +10,6 @@ def calculate_chunk_ranges(
 ) -> List[Tuple[int, int]]:
     """
     Calculate a list of (chunk_start, chunk_end) tuples covering a block range.
-
-    Args:
-        block_number_start: Starting block number (inclusive)
-        block_number_end: Ending block number (inclusive)
-        chunk_size: Size of each chunk (default: 50)
-
-    Returns:
-        List of (chunk_start, chunk_end) tuples
-
-    Raises:
-        ValueError: If block_number_end < block_number_start
     """
     if block_number_end < block_number_start:
         raise ValueError("block_number_end must be >= block_number_start")

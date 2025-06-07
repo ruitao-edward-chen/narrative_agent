@@ -6,7 +6,29 @@ An algorithmic trading agent that analyzes market narratives and their associate
 
 The Narrative Agent uses historical patterns in market narratives (news, events, sentiment) to predict future price movements. When a new narrative appears that is similar to historical narratives, the agent uses the correlation between past price positions and returns to generate trading signals.
 
-## SentiChain analytics and data
+### Key Features
+
+- **Pattern Recognition**: Identifies similar narratives based on keyword overlap
+- **Price Position Analysis**: Calculates relative price positions over configurable look-back periods
+- **Correlation-Based Signals**: Uses Pearson correlation between price positions and returns
+- **Enhanced DeFi Transaction Cost Modeling**: 
+  - Realistic AMM pool slippage simulation
+  - Dynamic gas fee calculations
+  - Protocol fee accounting
+- **Position Management**: Automatic position entry/exit with configurable hold periods
+- **Risk Management**: Built-in stop loss/gain and comprehensive risk analysis
+- **Performance Analytics**: Comprehensive metrics including returns, drawdown, and volatility
+
+## Enhanced Transaction Cost Model
+
+The system includes an enhanced transaction cost model designed for DeFi trading:
+
+- **AMM Pool Simulation**: Models constant product (x*y=k) pools that auto-adjust to external prices
+- **Dynamic Slippage Calculation**: Slippage varies based on trade size relative to pool liquidity
+- **Gas Fee Tracking**: Configurable gas costs per transaction
+- **Cost Breakdown Analysis**: Detailed breakdown of gas, slippage and protocol fees
+
+## SentiChain Analytics and Data
 
 The Narrative Agent directly pulls SentiChain's pre-processed market narratives (this process involves SentiChain's in-house AI Agents) and minute-level price data.
 
@@ -15,15 +37,7 @@ The Narrative Agent directly pulls SentiChain's pre-processed market narratives 
 - **Interactive Configuration**: Configure agents through an intuitive web interface
 - **Real-time Backtesting**: Watch your agent's performance update live during backtests
 - **Performance Visualization**: Interactive charts showing returns, drawdown, and other metrics
-
-## Key Features
-
-- **Pattern Recognition**: Identifies similar narratives based on keyword overlap
-- **Price Position Analysis**: Calculates relative price positions over configurable look-back periods
-- **Correlation-Based Signals**: Uses Pearson correlation between price positions and returns
-- **Position Management**: Automatic position entry/exit with configurable hold periods
-- **Risk Management**: Built-in transaction costs and position tracking
-- **Performance Analytics**: Comprehensive metrics including returns, drawdown, and volatility
+- **Transaction Cost Analysis**: Visual breakdown of trading costs
 
 ## Installation
 
@@ -49,23 +63,29 @@ pip install -e ".[dev]"
 ```python
 from narrative_agent import NarrativeAgent, NarrativeAgentConfig
 
-# Configure the agent
+# Configure the agent (enhanced transaction cost mode)
 config = NarrativeAgentConfig(
     ticker="BTC",
-    look_back_period=6,      # 6 hours
-    hold_period=1,           # 1 hour
-    transaction_cost=10,     # 10 basis points
-    count_common_threshold=5 # 5 common keywords
+    look_back_period=6,
+    hold_period=1,
+    count_common_threshold=5,
+    use_enhanced_costs=True,
+    gas_fee_usd=50.0,
+    amm_liquidity_usd=1_000_000.0,
+    position_size_usd=10_000.0,
 )
 
 # Create agent
-agent = NarrativeAgent(config, api_key="your-api-key")
+agent = NarrativeAgent(config, api_key="<your-sentichain-api-key>")
 
 # Run daily updates
 agent.update("2025-02-01T00:00:00")
 
 # Get performance metrics
 df = agent.get_performance_dataframe()
+
+# Get transaction cost analysis
+cost_summary = agent.get_transaction_cost_summary()
 ```
 
 ## Trading Logic
@@ -83,7 +103,7 @@ df = agent.get_performance_dataframe()
 - Only one position can be active at a time
 - New positions (1 or -1) override existing positions
 - Positions are automatically closed after the hold period
-- Transaction costs are applied on both entry and exit
+- Transaction costs are applied based on the enhanced model (gas + slippage + fees)
 
 ## Running a Backtest
 
@@ -91,11 +111,11 @@ df = agent.get_performance_dataframe()
 python examples/backtest_example.py
 ```
 
-Or after installation:
-
-```bash
-narrative-agent-backtest
-```
+The enhanced backtest example includes:
+- Realistic transaction cost modeling
+- Detailed cost breakdown analysis
+- Multiple visualization charts
+- Performance metrics with cost impact
 
 ## Using the Web UI
 
@@ -104,7 +124,10 @@ Once the application is running:
 1. **Configure Your Agent**:
    - Select ticker (BTC)
    - Set look-back and hold periods
-   - Configure transaction costs and keyword thresholds
+   - Configure enhanced transaction costs:
+     - Gas fee (USD per transaction)
+     - AMM pool liquidity
+     - Position size
    - Set stop loss and stop gain (optional)
    - Enter your SentiChain API key
 
@@ -116,6 +139,7 @@ Once the application is running:
 3. **Analyze Results**:
    - View live updating performance charts
    - Monitor key metrics (returns, drawdown, Sharpe ratio)
+   - Analyze transaction cost breakdown
    - Compare multiple backtests
 
 ## API Requirements
@@ -130,3 +154,8 @@ The agent tracks and reports:
 - Annualized volatility
 - Win rate
 - Average return per position
+- Transaction cost analysis:
+  - Total gas fees paid
+  - Average slippage per trade
+  - Cost breakdown by type
+  - Impact on net returns

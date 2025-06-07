@@ -9,6 +9,7 @@ from pandas import DataFrame
 
 from .config import NarrativeAgentConfig
 from .position_manager import PositionManager
+from .transaction_costs import TransactionCostModel
 from .data import DataFetcher
 
 
@@ -17,7 +18,13 @@ class NarrativeAgent:
     A Narrative Agent that trades based on historical narrative patterns.
     """
 
-    def __init__(self, config: NarrativeAgentConfig, api_key: str):
+    def __init__(
+        self,
+        config: NarrativeAgentConfig,
+        api_key: str,
+        use_cache: bool = True,
+        cache_dir: str = ".narrative_cache",
+    ):
         """
         Initialize the Narrative Agent.
         """
@@ -27,20 +34,41 @@ class NarrativeAgent:
         # Create agent ID for persistence
         self.id = f"{config.ticker}_{config.look_back_period}_{config.hold_period}_{config.transaction_cost}"
 
+        # Initialize transaction cost model if using enhanced costs
+        transaction_cost_model = None
+        if config.use_enhanced_costs:
+            transaction_cost_model = TransactionCostModel(
+                gas_fee_usd=config.gas_fee_usd,
+                amm_liquidity_usd=config.amm_liquidity_usd,
+                position_size_usd=config.position_size_usd,
+            )
+            print("Using enhanced transaction cost model:")
+            print(f"  - Gas fee: ${config.gas_fee_usd} per transaction")
+            print(f"  - AMM liquidity: ${config.amm_liquidity_usd:,.0f}")
+            print(f"  - Position size: ${config.position_size_usd:,.0f}")
+
         # Initialize components
         self.position_manager = PositionManager(
             config.hold_period,
             config.transaction_cost,
             config.stop_loss,
             config.stop_gain,
+            transaction_cost_model=transaction_cost_model,
+            use_enhanced_costs=config.use_enhanced_costs,
         )
-        self.data_fetcher = DataFetcher(api_key)
+        self.data_fetcher = DataFetcher(
+            api_key, use_cache=use_cache, cache_dir=cache_dir
+        )
 
         # Storage for narratives and prices
         self.narratives_stored: List[Dict[str, Any]] = []
         self.prices_stored: List[Tuple[str, float]] = []
 
         print(f"NarrativeAgent initialized for {config.ticker}")
+        if use_cache:
+            print(f"  - Data caching enabled (dir: {cache_dir})")
+        else:
+            print("  - Data caching disabled")
 
     def update_narratives_and_prices(self, start_date: str, end_date: str) -> None:
         """
@@ -326,9 +354,13 @@ class NarrativeAgent:
             if entry_price is None:
                 continue
 
-            # Open position
+            # Open position with configured position size
             self.position_manager.open_position(
-                narrative, position, narrative["timestamp"], entry_price
+                narrative,
+                position,
+                narrative["timestamp"],
+                entry_price,
+                position_value_usd=self.config.position_size_usd,
             )
 
     def finalize_positions(self, timestamp: str) -> None:
@@ -370,3 +402,28 @@ class NarrativeAgent:
             df["vol_annualized"] = 0.0
 
         return df
+
+    def get_transaction_cost_summary(self) -> Dict[str, Any]:
+        """
+        Get summary of transaction costs if using enhanced model.
+        """
+        if not self.config.use_enhanced_costs:
+            return {"message": "Enhanced cost model not enabled"}
+
+        cost_model = self.position_manager.transaction_cost_model
+        if cost_model is None:
+            return {"message": "Transaction cost model not initialized"}
+
+        return cost_model.get_cost_metrics()
+
+    def clear_cache(self) -> None:
+        """
+        Clear all cached data.
+        """
+        self.data_fetcher.clear_cache()
+
+    def get_cache_info(self) -> Dict[str, Any]:
+        """
+        Get information about cached data.
+        """
+        return self.data_fetcher.get_cache_info()
