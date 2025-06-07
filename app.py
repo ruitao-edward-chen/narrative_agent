@@ -41,30 +41,55 @@ executor = ThreadPoolExecutor(max_workers=4)
 # Check if frontend build exists and mount static files
 frontend_build = Path("frontend/build")
 if frontend_build.exists():
-    # Mount static files
     app.mount(
         "/static", StaticFiles(directory=str(frontend_build / "static")), name="static"
     )
 
 
 class AgentConfig(BaseModel):
-    """Agent configuration model"""
+    """
+    Agent configuration model.
+    """
 
     ticker: str = Field(default="BTC", description="Ticker symbol to trade")
+
     look_back_period: int = Field(default=6, ge=1, description="Hours to look back")
+
     hold_period: int = Field(default=1, ge=1, description="Hours to hold position")
+
     transaction_cost: int = Field(
-        default=10, ge=0, description="Transaction cost in basis points"
+        default=10, ge=0, description="Transaction cost in basis points (legacy)"
     )
+
     count_common_threshold: int = Field(
         default=5, ge=1, description="Min common keywords"
     )
+
     stop_loss: Optional[float] = Field(
         default=None, ge=0, description="Stop loss percentage (e.g., 5 = 5%)"
     )
+
     stop_gain: Optional[float] = Field(
         default=None, ge=0, description="Stop gain percentage (e.g., 10 = 10%)"
     )
+
+    # Enhanced mode.
+    gas_fee_usd: float = Field(
+        default=50.0, ge=0, description="Gas fee per transaction in USD"
+    )
+
+    amm_liquidity_usd: float = Field(
+        default=100_000_000.0, gt=0, description="AMM pool liquidity in USD"
+    )
+
+    position_size_usd: float = Field(
+        default=10_000.0, gt=0, description="Position size in USD"
+    )
+
+    use_enhanced_costs: bool = Field(
+        default=True, description="Use enhanced transaction cost model"
+    )
+
     api_key: str = Field(description="SentiChain API key")
 
 
@@ -86,14 +111,24 @@ class BacktestStatus(BaseModel):
     """
 
     backtest_id: str
+
     status: str
+
     progress: float
+
     current_day: int
+
     total_days: int
+
     config: Optional[Dict[str, Any]] = None
+
     metrics: Optional[Dict[str, Any]] = None
+
     performance_data: Optional[List[Dict[str, Any]]] = None
+
     error: Optional[str] = None
+
+    transaction_cost_summary: Optional[Dict[str, Any]] = None
 
 
 async def run_backtest_async(
@@ -115,9 +150,13 @@ async def run_backtest_async(
             count_common_threshold=config.agent_config.count_common_threshold,
             stop_loss=config.agent_config.stop_loss,
             stop_gain=config.agent_config.stop_gain,
+            gas_fee_usd=config.agent_config.gas_fee_usd,
+            amm_liquidity_usd=config.agent_config.amm_liquidity_usd,
+            position_size_usd=config.agent_config.position_size_usd,
+            use_enhanced_costs=config.agent_config.use_enhanced_costs,
         )
 
-        agent = NarrativeAgent(agent_config, config.agent_config.api_key)
+        agent = NarrativeAgent(agent_config, config.agent_config.api_key, False)
 
         # Run backtest
         start_date = config.start_date
@@ -170,16 +209,30 @@ async def run_backtest_async(
                 # Get performance data for chart
                 performance_data = []
                 for idx, row in df.iterrows():
-                    performance_data.append(
-                        {
-                            "position": idx,
-                            "entry_timestamp": row["entry_timestamp"],
-                            "exit_timestamp": row["close_timestamp"],
-                            "position_return": float(row["position_return"]),
-                            "cum_return": float(row["cum_return"]),
-                            "max_drawdown": float(row["max_drawdown"]),
-                        }
-                    )
+                    perf_row = {
+                        "position": idx,
+                        "entry_timestamp": row["entry_timestamp"],
+                        "exit_timestamp": row["close_timestamp"],
+                        "position_return": float(row["position_return"]),
+                        "cum_return": float(row["cum_return"]),
+                        "max_drawdown": float(row["max_drawdown"]),
+                    }
+
+                    # Add enhanced cost data if available
+                    if "total_cost_usd" in row:
+                        perf_row.update(
+                            {
+                                "total_cost_usd": float(row.get("total_cost_usd", 0)),
+                                "entry_slippage_bps": float(
+                                    row.get("entry_slippage_bps", 0)
+                                ),
+                                "exit_slippage_bps": float(
+                                    row.get("exit_slippage_bps", 0)
+                                ),
+                            }
+                        )
+
+                    performance_data.append(perf_row)
 
                 update["metrics"] = metrics
                 update["performance_data"] = performance_data
@@ -230,19 +283,41 @@ async def run_backtest_async(
 
             performance_data = []
             for idx, row in df.iterrows():
-                performance_data.append(
-                    {
-                        "position": idx,
-                        "entry_timestamp": row["entry_timestamp"],
-                        "exit_timestamp": row["close_timestamp"],
-                        "position_return": float(row["position_return"]),
-                        "cum_return": float(row["cum_return"]),
-                        "max_drawdown": float(row["max_drawdown"]),
-                    }
-                )
+                perf_row = {
+                    "position": idx,
+                    "entry_timestamp": row["entry_timestamp"],
+                    "exit_timestamp": row["close_timestamp"],
+                    "position_return": float(row["position_return"]),
+                    "cum_return": float(row["cum_return"]),
+                    "max_drawdown": float(row["max_drawdown"]),
+                }
+
+                # Add enhanced cost data if available
+                if "total_cost_usd" in row:
+                    perf_row.update(
+                        {
+                            "total_cost_usd": float(row.get("total_cost_usd", 0)),
+                            "entry_slippage_bps": float(
+                                row.get("entry_slippage_bps", 0)
+                            ),
+                            "exit_slippage_bps": float(row.get("exit_slippage_bps", 0)),
+                        }
+                    )
+
+                performance_data.append(perf_row)
 
             active_backtests[backtest_id]["metrics"] = metrics
             active_backtests[backtest_id]["performance_data"] = performance_data
+
+            # Get transaction cost summary if using enhanced model
+            if agent_config.use_enhanced_costs:
+                cost_summary = agent.get_transaction_cost_summary()
+                # Add clarification that this is cumulative across all positions
+                if isinstance(cost_summary, dict) and "total_costs" in cost_summary:
+                    cost_summary["note"] = (
+                        "Cumulative costs across all positions in backtest"
+                    )
+                active_backtests[backtest_id]["transaction_cost_summary"] = cost_summary
 
         active_backtests[backtest_id]["status"] = "completed"
         active_backtests[backtest_id]["progress"] = 1.0

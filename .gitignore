@@ -48,6 +48,31 @@ coverage.xml
 *.py,cover
 .hypothesis/
 .pytest_cache/
+cover/
+
+# Translations
+*.mo
+*.pot
+
+# Django stuff:
+*.log
+local_settings.py
+db.sqlite3
+db.sqlite3-journal
+
+# Flask stuff:
+instance/
+.webassets-cache
+
+# Scrapy stuff:
+.scrapy
+
+# Sphinx documentation
+docs/_build/
+
+# PyBuilder
+.pybuilder/
+target/
 
 # Jupyter Notebook
 .ipynb_checkpoints
@@ -58,6 +83,12 @@ ipython_config.py
 
 # pyenv
 .python-version
+
+# pipenv
+Pipfile.lock
+
+# PEP 582
+__pypackages__/
 
 # Environments
 .env
@@ -86,19 +117,24 @@ dmypy.json
 # Pyre type checker
 .pyre/
 
-# IDEs
+# pytype static type analyzer
+.pytype/
+
+# Cython debug symbols
+cython_debug/
+
+# Node modules
+node_modules/
+
+# Frontend build
+frontend/build/
+
+# VS Code
 .vscode/
-.idea/
-*.swp
-*.swo
-*~
 
-# OS files
-.DS_Store
-Thumbs.db
-
-# Project specific
+# Narrative Agent specific
+.narrative_cache/
 *.pkl
-*.csv
-*.log
-backtest_results_* 
+backtest_results_*.csv
+liquidity_impact.png
+trade_size_impact.png 

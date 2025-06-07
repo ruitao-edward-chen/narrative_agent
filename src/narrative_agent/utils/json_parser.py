@@ -1,8 +1,5 @@
 """
 JSON parsing utilities for handling potentially malformed JSON strings.
-
-This module provides helper functions to parse JSON strings that may be malformed,
-including removing code fences, balancing quotes/brackets, and trimming extra commas.
 """
 
 import re
@@ -20,12 +17,6 @@ except ImportError:
 def clean_json_string(s: str) -> str:
     """
     Remove markdown code fences, extra quotes, and trailing commas from a JSON string.
-
-    Args:
-        s: Input string
-
-    Returns:
-        Cleaned string
     """
     if s is None:
         return ""
@@ -41,12 +32,6 @@ def balance_json_string(s: str) -> str:
     Append missing closing braces/brackets to balance the JSON.
     This scans the string (ignoring text inside quotes) and counts
     unmatched '{' and '['.
-
-    Args:
-        s: Input string
-
-    Returns:
-        Balanced string
     """
     open_curly = 0
     open_square = 0
@@ -88,12 +73,6 @@ def complete_quotes(s: str) -> str:
     """
     Heuristic: if the number of unescaped double quotes is odd,
     assume one is missing and append one.
-
-    Args:
-        s: Input string
-
-    Returns:
-        String with completed quotes
     """
     count = 0
     escape = False
@@ -114,12 +93,6 @@ def complete_quotes(s: str) -> str:
 def complete_json(s: str) -> str:
     """
     Apply quote completion and brace/bracket balancing.
-
-    Args:
-        s: Input string
-
-    Returns:
-        Completed JSON string
     """
     return balance_json_string(complete_quotes(s))
 
@@ -132,12 +105,6 @@ def parse_json_string(s: str) -> Any:
       3. Trying to parse the completed string.
       4. If that fails, progressively trimming characters from the end
          until a valid JSON fragment is found.
-
-    Args:
-        s: Input JSON string (possibly malformed)
-
-    Returns:
-        The parsed JSON (which may be incomplete) or an empty dict if no valid parse is found.
     """
     cleaned = clean_json_string(s)
 

@@ -1,12 +1,13 @@
 """
-Data fetching and client modules for SentiChain API.
+Data fetching and caching functionality.
 """
 
-from .client import SentiChainClient
 from .fetcher import DataFetcher
-
+from .client import SentiChainClient
+from .cache import DataCache
 
 __all__ = [
-    "SentiChainClient",
     "DataFetcher",
+    "SentiChainClient",
+    "DataCache",
 ]
