@@ -11,18 +11,24 @@ from ..utils import calculate_chunk_ranges
 
 class DataFetcher:
     """
-    Pre-processed data fetcher for narratives and prices with caching support.
+    Pre-processed data fetcher for narratives and prices.
     """
 
     def __init__(
-        self, api_key: str, use_cache: bool = True, cache_dir: str = ".narrative_cache"
+        self,
+        api_key: str,
+        ticker: str,
+        use_cache: bool = True,
+        cache_dir: str = ".narrative_cache",
     ):
         """
-        Initialize the data fetcher.
+        Initialize the DataFetcher.
         """
-        self.client = SentiChainClient(api_key)
+        self.api_key = api_key
+        self.ticker = ticker
         self.use_cache = use_cache
         self.cache = DataCache(cache_dir) if use_cache else None
+        self.client = SentiChainClient(api_key)
 
     def get_narratives(
         self, ticker: str, start_date: str, end_date: str

@@ -536,6 +536,15 @@ function App() {
                         </span>
                       )}
                     </div>
+                    {/* Add cache info display */}
+                    {activeBacktest.cache_info && (
+                      <div className="mt-2 text-xs text-gray-500">
+                        <div className="flex items-center gap-1">
+                          <span>Cache: {activeBacktest.cache_info.narrative_files} narratives, {activeBacktest.cache_info.price_files} prices</span>
+                          <span>({(activeBacktest.cache_info.total_size_mb || 0).toFixed(1)} MB)</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Real-time Activity Log or Transaction Cost Summary */}

@@ -16,7 +16,7 @@ from .strategy import CompositeStrategy, get_market_condition
 
 class NarrativeAgent:
     """
-    A Narrative Agent that trades based on historical narrative patterns.
+    Main agent class that implements the trading strategy based on narrative analysis.
     """
 
     def __init__(
@@ -27,7 +27,7 @@ class NarrativeAgent:
         cache_dir: str = ".narrative_cache",
     ):
         """
-        Initialize the Narrative Agent.
+        Initialize the NarrativeAgent.
         """
         self.config = config
         self.api_key = api_key
@@ -58,7 +58,10 @@ class NarrativeAgent:
             use_enhanced_costs=config.use_enhanced_costs,
         )
         self.data_fetcher = DataFetcher(
-            api_key, use_cache=use_cache, cache_dir=cache_dir
+            api_key,
+            config.ticker,
+            use_cache,
+            cache_dir,
         )
 
         # Initialize strategy
@@ -246,7 +249,7 @@ class NarrativeAgent:
             return None
 
         # Generate position based on composite score
-        if composite_score > 0.25:  # Lowered threshold for more positions
+        if composite_score > 0.25:
             return 1
         elif composite_score < -0.25:
             return -1
@@ -405,6 +408,8 @@ class NarrativeAgent:
 
     def get_cache_info(self) -> Dict[str, Any]:
         """
-        Get information about cached data.
+        Get information about the cache.
         """
-        return self.data_fetcher.get_cache_info()
+        if hasattr(self.data_fetcher, "cache") and self.data_fetcher.cache:
+            return self.data_fetcher.cache.get_cache_info()
+        return {"narrative_files": 0, "price_files": 0, "total_size_mb": 0}

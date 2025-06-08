@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from concurrent.futures import ThreadPoolExecutor
+import hashlib
 
 from narrative_agent import NarrativeAgent, NarrativeAgentConfig
 
@@ -107,7 +108,7 @@ class BacktestConfig(BaseModel):
 
 class BacktestStatus(BaseModel):
     """
-    Backtest status model
+    Backtest status model.
     """
 
     backtest_id: str
@@ -120,15 +121,17 @@ class BacktestStatus(BaseModel):
 
     total_days: int
 
-    config: Optional[Dict[str, Any]] = None
+    timestamp: Optional[datetime] = None
 
-    metrics: Optional[Dict[str, Any]] = None
+    metrics: Optional[Dict[str, float]] = None
 
     performance_data: Optional[List[Dict[str, Any]]] = None
 
-    error: Optional[str] = None
+    config: Optional[Dict[str, Any]] = None
 
-    transaction_cost_summary: Optional[Dict[str, Any]] = None
+    transaction_cost_summary: Optional[Dict[str, float]] = None
+
+    cache_info: Optional[Dict[str, Any]] = None  # Add this line
 
 
 async def run_backtest_async(
@@ -156,7 +159,13 @@ async def run_backtest_async(
             use_enhanced_costs=config.agent_config.use_enhanced_costs,
         )
 
-        agent = NarrativeAgent(agent_config, config.agent_config.api_key, False)
+        api_key_hash = hashlib.sha256(config.agent_config.api_key.encode()).hexdigest()[
+            :8
+        ]
+        cache_dir = f".narrative_cache_{api_key_hash}"
+        agent = NarrativeAgent(
+            agent_config, config.agent_config.api_key, True, cache_dir
+        )
 
         # Run backtest
         start_date = config.start_date
@@ -339,6 +348,114 @@ async def run_backtest_async(
                 pass
 
 
+def run_backtest(
+    backtest_id: str, agent: NarrativeAgent, start_date: str, num_days: int
+):
+    """
+    Run a backtest synchronously.
+    """
+    try:
+        # Initialize backtest state
+        active_backtests[backtest_id]["status"] = "running"
+        active_backtests[backtest_id]["current_day"] = 0
+        active_backtests[backtest_id]["total_days"] = num_days
+
+        # Get initial cache info
+        cache_info = agent.get_cache_info()
+        active_backtests[backtest_id]["cache_info"] = cache_info
+
+        # Run the backtest
+        for day in range(num_days):
+            if active_backtests[backtest_id]["status"] == "cancelled":
+                break
+
+            timestamp = (
+                datetime.fromisoformat(start_date) + timedelta(days=day)
+            ).isoformat()
+
+            # Update agent
+            agent.update(timestamp)
+
+            # Update progress
+            active_backtests[backtest_id]["progress"] = (day + 1) / num_days
+            active_backtests[backtest_id]["current_day"] = day + 1
+
+        # Finalize
+        final_timestamp = (
+            datetime.fromisoformat(start_date) + timedelta(days=num_days)
+        ).isoformat()
+        agent.finalize_positions(final_timestamp)
+
+        # Get final results
+        df = agent.get_performance_dataframe()
+        if not df.empty:
+            annualized_return = float(
+                df["position_return"].mean() * (365 * 24 / agent.config.hold_period)
+            )
+            annualized_vol = float(df["vol_annualized"].iloc[-1])
+            metrics = {
+                "total_positions": len(df),
+                "total_return": float(df["cum_return"].iloc[-1]),
+                "max_drawdown": float(df["max_drawdown"].iloc[-1]),
+                "volatility": annualized_vol,
+                "win_rate": float((df["position_return"] > 0).sum() / len(df)),
+                "avg_return": float(df["position_return"].mean()),
+                "annualized_return": annualized_return,
+                "sharpe_ratio": (
+                    annualized_return / annualized_vol if annualized_vol > 0 else 0
+                ),
+            }
+
+            performance_data = []
+            for idx, row in df.iterrows():
+                perf_row = {
+                    "position": idx,
+                    "entry_timestamp": row["entry_timestamp"],
+                    "exit_timestamp": row["close_timestamp"],
+                    "position_return": float(row["position_return"]),
+                    "cum_return": float(row["cum_return"]),
+                    "max_drawdown": float(row["max_drawdown"]),
+                }
+
+                # Add enhanced cost data if available
+                if "total_cost_usd" in row:
+                    perf_row.update(
+                        {
+                            "total_cost_usd": float(row.get("total_cost_usd", 0)),
+                            "entry_slippage_bps": float(
+                                row.get("entry_slippage_bps", 0)
+                            ),
+                            "exit_slippage_bps": float(row.get("exit_slippage_bps", 0)),
+                        }
+                    )
+
+                performance_data.append(perf_row)
+
+            active_backtests[backtest_id]["metrics"] = metrics
+            active_backtests[backtest_id]["performance_data"] = performance_data
+
+            # Get transaction cost summary if using enhanced model
+            if agent.config.use_enhanced_costs:  # Changed from agent_config
+                cost_summary = agent.get_transaction_cost_summary()
+                # Add clarification that this is cumulative across all positions
+                if isinstance(cost_summary, dict) and "total_costs" in cost_summary:
+                    cost_summary["note"] = (
+                        "Cumulative costs across all positions in backtest"
+                    )
+                active_backtests[backtest_id]["transaction_cost_summary"] = cost_summary
+
+        # Update final cache info
+        final_cache_info = agent.get_cache_info()
+        active_backtests[backtest_id]["cache_info"] = final_cache_info
+
+        active_backtests[backtest_id]["status"] = "completed"
+        active_backtests[backtest_id]["progress"] = 1.0
+
+    except Exception as e:
+        active_backtests[backtest_id]["status"] = "error"
+        active_backtests[backtest_id]["error"] = str(e)
+
+
 @app.get("/api")
 async def api_info():
     """
@@ -360,30 +477,74 @@ async def serve_root():
     }
 
 
-@app.post("/backtest/start", response_model=BacktestStatus)
-async def start_backtest(config: BacktestConfig):
+@app.post("/backtest/start")
+async def start_backtest(
+    request: BacktestConfig,
+):
     """
-    Start a new backtest
+    Start a new backtest.
     """
-    backtest_id = str(uuid.uuid4())
+    try:
+        # Create unique backtest ID
+        backtest_id = str(uuid.uuid4())
 
-    # Initialize backtest status
-    active_backtests[backtest_id] = {
-        "backtest_id": backtest_id,
-        "status": "initializing",
-        "progress": 0.0,
-        "current_day": 0,
-        "total_days": config.num_days,
-        "config": config.model_dump(),
-        "metrics": None,
-        "performance_data": None,
-        "error": None,
-    }
+        # Create agent configuration
+        agent_config = NarrativeAgentConfig(
+            ticker=request.agent_config.ticker,
+            look_back_period=request.agent_config.look_back_period,
+            hold_period=request.agent_config.hold_period,
+            transaction_cost=request.agent_config.transaction_cost,
+            count_common_threshold=request.agent_config.count_common_threshold,
+            stop_loss=request.agent_config.stop_loss,
+            stop_gain=request.agent_config.stop_gain,
+            use_enhanced_costs=request.agent_config.use_enhanced_costs,
+            gas_fee_usd=request.agent_config.gas_fee_usd,
+            amm_liquidity_usd=request.agent_config.amm_liquidity_usd,
+            position_size_usd=request.agent_config.position_size_usd,
+        )
 
-    # Start backtest in background
-    asyncio.create_task(run_backtest_async(backtest_id, config))
+        # Create API key-based cache directory
+        api_key_hash = hashlib.sha256(
+            request.agent_config.api_key.encode()
+        ).hexdigest()[:8]
+        cache_dir = f".narrative_cache_{api_key_hash}"
 
-    return BacktestStatus(**active_backtests[backtest_id])
+        # Create agent with API key-specific cache
+        agent = NarrativeAgent(
+            agent_config,
+            request.agent_config.api_key,
+            use_cache=True,  # Enable caching
+            cache_dir=cache_dir,  # Use API key-specific cache
+        )
+
+        # Start backtest
+        loop = asyncio.get_running_loop()
+        loop.run_in_executor(
+            executor,
+            run_backtest,
+            backtest_id,
+            agent,
+            request.start_date,
+            request.num_days,
+        )
+
+        # Initialize backtest state
+        active_backtests[backtest_id] = {
+            "backtest_id": backtest_id,
+            "status": "initializing",
+            "progress": 0.0,
+            "current_day": 0,
+            "total_days": request.num_days,
+            "config": request.model_dump(),
+            "metrics": None,
+            "performance_data": None,
+            "error": None,
+            "cache_info": agent.get_cache_info(),
+        }
+
+        return BacktestStatus(**active_backtests[backtest_id])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/backtest/{backtest_id}/status", response_model=BacktestStatus)
@@ -455,7 +616,7 @@ async def websocket_endpoint(websocket: WebSocket, backtest_id: str):
                 print(f"Backtest {backtest_id} not found in active backtests")
                 break
 
-            await asyncio.sleep(0.5)  # Poll every 500ms
+            await asyncio.sleep(0.5)
 
     except WebSocketDisconnect:
         print(f"WebSocket disconnected for backtest {backtest_id}")
@@ -475,6 +636,43 @@ async def serve_spa(path: str):
             return FileResponse(str(file_path))
         return FileResponse(str(frontend_build / "index.html"))
     return {"error": "Frontend not found", "path": path}
+
+
+@app.get("/cache/info/{api_key_prefix}")
+async def get_cache_info(api_key_prefix: str):
+    """
+    Get cache information for an API key.
+    """
+    try:
+        api_key_hash = hashlib.sha256(api_key_prefix.encode()).hexdigest()[:8]
+        cache_dir = f".narrative_cache_{api_key_hash}"
+
+        from src.narrative_agent.data.cache import DataCache
+
+        cache = DataCache(cache_dir)
+
+        return cache.get_cache_info()
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/cache/clear/{api_key_prefix}")
+async def clear_cache(api_key_prefix: str):
+    """
+    Clear cache for an API key.
+    """
+    try:
+        api_key_hash = hashlib.sha256(api_key_prefix.encode()).hexdigest()[:8]
+        cache_dir = f".narrative_cache_{api_key_hash}"
+
+        from src.narrative_agent.data.cache import DataCache
+
+        cache = DataCache(cache_dir)
+        cache.clear_cache()
+
+        return {"message": "Cache cleared successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 if __name__ == "__main__":
