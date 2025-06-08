@@ -11,6 +11,7 @@ from .config import NarrativeAgentConfig
 from .position_manager import PositionManager
 from .transaction_costs import TransactionCostModel
 from .data import DataFetcher
+from .strategy import CompositeStrategy, get_market_condition
 
 
 class NarrativeAgent:
@@ -59,6 +60,9 @@ class NarrativeAgent:
         self.data_fetcher = DataFetcher(
             api_key, use_cache=use_cache, cache_dir=cache_dir
         )
+
+        # Initialize strategy
+        self.strategy = CompositeStrategy()
 
         # Storage for narratives and prices
         self.narratives_stored: List[Dict[str, Any]] = []
@@ -219,55 +223,32 @@ class NarrativeAgent:
 
     def generate_position(self, narrative_id: str) -> Optional[int]:
         """
-        Generate a position signal based on historical patterns:
-            1 for long, -1 for short, 0 for no position, None if insufficient data
+        Generate a position signal using composite scoring approach.
         """
-        # Get current narrative details
-        narrative_timestamp = ""
-        for narrative in self.narratives_stored:
-            if narrative["ID"] == narrative_id:
-                narrative_timestamp = narrative.get("timestamp", "")
-                break
+        # Create context for strategy
+        context = {
+            "narratives_stored": self.narratives_stored,
+            "prices_stored": self.prices_stored,
+            "config": self.config,
+            "calculate_price_position": self.calculate_price_position,
+            "calculate_price_return": self.calculate_price_return,
+            "search_similar_narratives": self.search_similar_narratives,
+            "get_price_at_timestamp": self.get_price_at_timestamp,
+            "get_market_condition": lambda ts: get_market_condition(
+                ts, self.prices_stored, self.get_price_at_timestamp
+            ),
+        }
 
-        if not narrative_timestamp:
+        # Get composite score from strategy
+        composite_score = self.strategy.calculate_composite_score(narrative_id, context)
+
+        if composite_score is None:
             return None
 
-        # Calculate current price position
-        current_price_position = self.calculate_price_position(narrative_timestamp)
-        if current_price_position is None:
-            return None
-
-        # Find similar historical narratives
-        similar_narratives = self.search_similar_narratives(narrative_id)
-
-        # Calculate correlation between price positions and returns
-        price_positions = []
-        price_returns = []
-
-        for similar_narrative in similar_narratives:
-            position = self.calculate_price_position(similar_narrative["timestamp"])
-            if position is None:
-                continue
-
-            return_ = self.calculate_price_return(similar_narrative["timestamp"])
-            if return_ is None:
-                continue
-
-            price_positions.append(position)
-            price_returns.append(return_)
-
-        # Need at least 2 data points for correlation
-        if len(price_positions) < 2:
-            return None
-
-        # Calculate Pearson correlation
-        corr_matrix = np.corrcoef(price_positions, price_returns)
-        pearson_r = corr_matrix[0, 1]
-
-        # Generate position based on correlation and current price position
-        if current_price_position > 0.5 and pearson_r > 0:
+        # Generate position based on composite score
+        if composite_score > 0.25:  # Lowered threshold for more positions
             return 1
-        elif current_price_position < 0.5 and pearson_r < 0:
+        elif composite_score < -0.25:
             return -1
         else:
             return 0

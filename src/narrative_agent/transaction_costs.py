@@ -64,45 +64,52 @@ class TransactionCostModel:
     ) -> TransactionCostBreakdown:
         """
         Calculate comprehensive transaction costs for a trade.
+        Note: Protocol fees are included in the slippage calculation by the AMM.
         """
         # Ensure pool is synced to current price
         self.amm_pool.sync_to_price(current_price)
 
-        # Calculate slippage
-        slippage_bps = self.amm_pool.calculate_slippage_bps(
+        # Calculate total slippage (includes protocol fee)
+        total_slippage_bps = self.amm_pool.calculate_slippage_bps(
             position_value_usd, current_price, is_buy
         )
-        slippage_usd = position_value_usd * (slippage_bps / 10000)
 
-        # Calculate protocol fee
-        protocol_fee_usd = position_value_usd * self.amm_pool.fee_tier
+        # This is an approximation for reporting purposes
+        protocol_fee_bps = self.amm_pool.fee_tier * 10000
+
+        # Pure price impact (excluding protocol fee) as an approximation
+        price_impact_bps = max(0, total_slippage_bps - protocol_fee_bps)
+
+        # Calculate USD amounts
+        total_slippage_usd = position_value_usd * (total_slippage_bps / 10000)
+        protocol_fee_usd = position_value_usd * (protocol_fee_bps / 10000)
 
         # Gas fee is fixed per transaction
         gas_fee = self.gas_fee_usd
 
         # Total costs
-        total_cost_usd = gas_fee + slippage_usd + protocol_fee_usd
+        total_cost_usd = gas_fee + total_slippage_usd
         total_cost_bps = (total_cost_usd / position_value_usd) * 10000
 
         # Calculate effective price after slippage
         if is_buy:
-            effective_price = current_price * (1 + slippage_bps / 10000)
+            effective_price = current_price * (1 + total_slippage_bps / 10000)
         else:
-            effective_price = current_price * (1 - slippage_bps / 10000)
+            effective_price = current_price * (1 - total_slippage_bps / 10000)
 
-        # Calculate price impact
-        price_impact_pct = (slippage_bps / 10000) * 100
+        # Calculate price impact percentage
+        price_impact_pct = (price_impact_bps / 10000) * 100
 
         # Update tracking metrics
         self.transaction_count += 1
         self.total_gas_paid += gas_fee
-        self.total_slippage_paid += slippage_usd
+        self.total_slippage_paid += total_slippage_usd
         self.total_fees_paid += protocol_fee_usd
 
         return TransactionCostBreakdown(
             gas_fee_usd=gas_fee,
-            slippage_bps=slippage_bps,
-            slippage_usd=slippage_usd,
+            slippage_bps=total_slippage_bps,
+            slippage_usd=total_slippage_usd,
             protocol_fee_usd=protocol_fee_usd,
             total_cost_usd=total_cost_usd,
             total_cost_bps=total_cost_bps,
@@ -160,18 +167,17 @@ class TransactionCostModel:
         """
         Get summary metrics for all transaction costs.
         """
-        total_costs = (
-            self.total_gas_paid + self.total_slippage_paid + self.total_fees_paid
-        )
+        # Don't add fees_paid to total since it's already included in slippage
+        total_costs = self.total_gas_paid + self.total_slippage_paid
         position_count = self.transaction_count // 2
 
         return {
             "transaction_count": self.transaction_count,
             "position_count": position_count,
             "total_gas_paid": self.total_gas_paid,
-            "total_slippage_paid": self.total_slippage_paid,
-            "total_fees_paid": self.total_fees_paid,
-            "total_costs": total_costs,
+            "total_slippage_paid": self.total_slippage_paid,  # This includes protocol fees
+            "total_fees_paid": self.total_fees_paid,  # Keep for display breakdown
+            "total_costs": total_costs,  # Fixed: no longer double-counting protocol fees
             "avg_gas_per_tx": self.total_gas_paid / max(1, self.transaction_count),
             "avg_slippage_per_tx": self.total_slippage_paid
             / max(1, self.transaction_count),

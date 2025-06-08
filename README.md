@@ -28,6 +28,36 @@ The system includes an enhanced transaction cost model designed for DeFi trading
 - **Gas Fee Tracking**: Configurable gas costs per transaction
 - **Cost Breakdown Analysis**: Detailed breakdown of gas, slippage and protocol fees
 
+## Trading Strategy
+
+The Narrative Agent employs a composite strategy that combines multiple signal generators:
+
+### Signal Generators
+
+1. **Pattern Signal**: Correlation-based approach analyzing historical price positions and returns
+2. **Sentiment-Event Signal**: Analyzes performance of specific sentiment-event combinations (e.g. bullish macro events)
+3. **Price Momentum Signal**: Compares short-term vs long-term price momentum
+4. **Sentiment Momentum Signal**: Tracks shifts in overall market narrative sentiment
+5. **Volatility Regime Signal**: Adjusts position confidence based on market volatility
+6. **Narrative Clustering Signal**: Groups similar narratives and analyzes performance in different market regimes
+
+### Composite Scoring
+
+The agent combines all signals using a weighted scoring system:
+- Each signal generates a score between -1 and 1
+- Weights are dynamically adjusted based on market conditions:
+  - **Bullish markets**: Higher weight on momentum signals
+  - **Bearish markets**: Higher weight on sentiment and volatility signals
+  - **Ranging markets**: Balanced weights across all signals
+- Final position decisions require at least 2 valid signals
+
+### Market Condition Detection
+
+The system continuously monitors market conditions using:
+- Multiple moving averages (24h, 72h, 168h)
+- Price position relative to MAs
+- MA alignment (bullish when shorter > longer)
+
 ## SentiChain Analytics and Data
 
 The Narrative Agent directly pulls SentiChain's pre-processed market narratives (this process involves SentiChain's in-house AI Agents) and minute-level price data.
@@ -90,12 +120,20 @@ cost_summary = agent.get_transaction_cost_summary()
 
 ## Trading Logic
 
-1. **Narrative Analysis**: When a new narrative with a pattern is detected, the agent searches for similar historical narratives
-2. **Price Position Calculation**: For each narrative, calculate where the price was relative to its recent range
-3. **Correlation Analysis**: Compute correlation between historical price positions and subsequent returns
-4. **Signal Generation**:
-   - Long (1): High price position (>0.5) with positive correlation
-   - Short (-1): Low price position (<0.5) with negative correlation
+The enhanced trading logic follows these steps:
+
+1. **Narrative Detection**: When a new narrative with a pattern is detected, the agent activates its composite strategy
+2. **Multi-Signal Analysis**: 
+   - Pattern correlation analysis
+   - Sentiment-event historical performance
+   - Price and sentiment momentum calculation
+   - Volatility regime assessment
+   - Narrative clustering and similarity matching
+3. **Market Context**: Determine current market condition (bullish/bearish/ranging)
+4. **Composite Score**: Calculate weighted average of all signals with dynamic weights
+5. **Signal Generation**:
+   - Long (1): Composite score > 0.25
+   - Short (-1): Composite score < -0.25
    - No position (0): Otherwise
 
 ## Position Management
