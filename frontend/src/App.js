@@ -122,6 +122,22 @@ function App() {
       return;
     }
 
+    // Validate API key first
+    try {
+      const validationResponse = await axios.get('https://api.sentichain.com/api/is_api_key_valid', {
+        params: { api_key: config.api_key }
+      });
+      
+      if (!validationResponse.data.valid) {
+        toast.error('Invalid SentiChain API key. Please check your key and try again.');
+        return;
+      }
+    } catch (error) {
+      console.error('API key validation error:', error);
+      toast.error('Failed to validate API key. Please check your connection and try again.');
+      return;
+    }
+
     if (!validateDates(config.start_date, config.num_days)) {
       toast.error('Start date + backtest days cannot exceed today');
       return;
