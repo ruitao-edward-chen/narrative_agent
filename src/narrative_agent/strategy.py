@@ -113,7 +113,15 @@ class SentimentEventSignal(SignalGenerator):
         if not current_narrative:
             return None
 
-        sentiment = current_narrative.get("sentiment", "neutral")
+        sentiment = current_narrative.get("sentiment", "neutral").lower().strip()
+        # Handle typos
+        if sentiment in ["bullish", "bulish"]:
+            sentiment = "bullish"
+        elif sentiment == "bearish":
+            sentiment = "bearish"
+        else:
+            sentiment = "neutral"
+
         event_type = current_narrative.get("event", "")
 
         if sentiment == "neutral" or not event_type:
@@ -125,8 +133,17 @@ class SentimentEventSignal(SignalGenerator):
             if narrative["timestamp"] >= current_narrative["timestamp"]:
                 continue
 
+            narrative_sentiment = narrative.get("sentiment", "neutral").lower().strip()
+            # Handle typos in historical narratives
+            if narrative_sentiment in ["bullish", "bulish"]:
+                narrative_sentiment = "bullish"
+            elif narrative_sentiment == "bearish":
+                narrative_sentiment = "bearish"
+            else:
+                narrative_sentiment = "neutral"
+
             if (
-                narrative.get("sentiment") == sentiment
+                narrative_sentiment == sentiment
                 and narrative.get("event") == event_type
             ):
                 ret = calculate_price_return(narrative["timestamp"])
@@ -253,6 +270,15 @@ class SentimentMomentumSignal(SignalGenerator):
             ts = narrative["timestamp"]
             sentiment = narrative.get("sentiment", "neutral")
 
+            # Handle typos and normalize sentiment
+            sentiment = sentiment.lower().strip()
+            if sentiment in ["bullish", "bulish"]:  # Handle typo
+                sentiment = "bullish"
+            elif sentiment == "bearish":
+                sentiment = "bearish"
+            else:
+                sentiment = "neutral"
+
             if recent_start <= ts <= current_narrative["timestamp"]:
                 recent_sentiment[sentiment] += 1
             elif previous_start <= ts < recent_start:
@@ -276,7 +302,13 @@ class SentimentMomentumSignal(SignalGenerator):
         sentiment_momentum = recent_score - previous_score
 
         # Align with current narrative sentiment
-        current_sentiment = current_narrative.get("sentiment", "neutral")
+        current_sentiment = (
+            current_narrative.get("sentiment", "neutral").lower().strip()
+        )
+        # Handle typo for current sentiment too
+        if current_sentiment in ["bullish", "bulish"]:
+            current_sentiment = "bullish"
+
         if current_sentiment == "bullish" and sentiment_momentum > 0:
             return sentiment_momentum  # Bullish momentum confirmed
         elif current_sentiment == "bearish" and sentiment_momentum < 0:
@@ -366,7 +398,17 @@ class NarrativeClusteringSignal(SignalGenerator):
 
         # Define narrative "fingerprint"
         current_keywords = set(current_narrative.get("pattern_keywords", []))
-        current_sentiment = current_narrative.get("sentiment", "neutral")
+        current_sentiment = (
+            current_narrative.get("sentiment", "neutral").lower().strip()
+        )
+        # Handle typos
+        if current_sentiment in ["bullish", "bulish"]:
+            current_sentiment = "bullish"
+        elif current_sentiment == "bearish":
+            current_sentiment = "bearish"
+        else:
+            current_sentiment = "neutral"
+
         current_event = current_narrative.get("event", "")
 
         # Find narratives with similar fingerprints
@@ -382,9 +424,16 @@ class NarrativeClusteringSignal(SignalGenerator):
                 )
             )
 
-            sentiment_match = (
-                1 if narrative.get("sentiment") == current_sentiment else 0
-            )
+            narrative_sentiment = narrative.get("sentiment", "neutral").lower().strip()
+            # Handle typos
+            if narrative_sentiment in ["bullish", "bulish"]:
+                narrative_sentiment = "bullish"
+            elif narrative_sentiment == "bearish":
+                narrative_sentiment = "bearish"
+            else:
+                narrative_sentiment = "neutral"
+
+            sentiment_match = 1 if narrative_sentiment == current_sentiment else 0
             event_match = 1 if narrative.get("event") == current_event else 0
 
             similarity = (
