@@ -543,11 +543,9 @@ function App() {
                               </div>
                               <div className="flex justify-between">
                                 <span className="text-gray-400">Slippage:</span>
-                                <span className="text-red-400">{formatCurrency(activeBacktest.transaction_cost_summary.total_slippage_paid)}</span>
-                              </div>
-                              <div className="flex justify-between">
-                                <span className="text-gray-400">Protocol:</span>
-                                <span className="text-cyan-400">{formatCurrency(activeBacktest.transaction_cost_summary.total_fees_paid)}</span>
+                                <span className="text-red-400" title="Includes protocol fees">
+                                  {formatCurrency(activeBacktest.transaction_cost_summary.total_slippage_paid)}
+                                </span>
                               </div>
                               <div className="border-t border-gray-700 pt-1 mt-1 flex justify-between">
                                 <span className="text-gray-400">Avg/Trade:</span>
@@ -781,16 +779,16 @@ function App() {
                         activeBacktest.transaction_cost_summary 
                           ? formatCurrency(activeBacktest.transaction_cost_summary.total_costs)
                           : activeBacktest.config?.agent_config?.use_enhanced_costs
-                            ? (activeBacktest.metrics 
-                                ? `~${formatCurrency(activeBacktest.metrics.total_positions * 2 * (activeBacktest.config.agent_config.gas_fee_usd || 1))}`
-                                : 'Calculating...')
+                            ? (activeBacktest.status === 'completed' 
+                                ? '$0.00'
+                                : 'Pending')
                             : activeBacktest.metrics && activeBacktest.config?.agent_config?.transaction_cost
                               ? `~${(activeBacktest.metrics.total_positions * 2 * activeBacktest.config.agent_config.transaction_cost).toFixed(0)} bps`
-                              : activeBacktest.config?.agent_config?.use_enhanced_costs ? 'Calculating...' : '0 bps'
+                              : activeBacktest.config?.agent_config?.use_enhanced_costs ? 'Pending' : '0 bps'
                       }
                       icon={DollarSign}
                       color="orange"
-                      isLoading={!activeBacktest.metrics}
+                      isLoading={!activeBacktest.metrics && activeBacktest.status === 'running'}
                     />
                   </div>
                 </div>
@@ -942,4 +940,4 @@ function MetricCard({ title, value, icon: Icon, color, isLoading }) {
   );
 }
 
-export default App; 
+export default App;

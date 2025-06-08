@@ -167,18 +167,17 @@ class TransactionCostModel:
         """
         Get summary metrics for all transaction costs.
         """
-        total_costs = (
-            self.total_gas_paid + self.total_slippage_paid + self.total_fees_paid
-        )
+        # Don't add fees_paid to total since it's already included in slippage
+        total_costs = self.total_gas_paid + self.total_slippage_paid
         position_count = self.transaction_count // 2
 
         return {
             "transaction_count": self.transaction_count,
             "position_count": position_count,
             "total_gas_paid": self.total_gas_paid,
-            "total_slippage_paid": self.total_slippage_paid,
-            "total_fees_paid": self.total_fees_paid,
-            "total_costs": total_costs,
+            "total_slippage_paid": self.total_slippage_paid,  # This includes protocol fees
+            "total_fees_paid": self.total_fees_paid,  # Keep for display breakdown
+            "total_costs": total_costs,  # Fixed: no longer double-counting protocol fees
             "avg_gas_per_tx": self.total_gas_paid / max(1, self.transaction_count),
             "avg_slippage_per_tx": self.total_slippage_paid
             / max(1, self.transaction_count),
