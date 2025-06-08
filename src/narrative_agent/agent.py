@@ -219,8 +219,66 @@ class NarrativeAgent:
 
     def generate_position(self, narrative_id: str) -> Optional[int]:
         """
-        Generate a position signal based on historical patterns:
-            1 for long, -1 for short, 0 for no position, None if insufficient data
+        Generate a position signal using composite scoring approach.
+        """
+        # Get composite score from multiple signals
+        composite_score = self._calculate_composite_score(narrative_id)
+
+        if composite_score is None:
+            return None
+
+        # Generate position based on composite score
+        if composite_score > 0.25:  # Lowered threshold for more positions
+            return 1
+        elif composite_score < -0.25:
+            return -1
+        else:
+            return 0
+
+    def _calculate_composite_score(self, narrative_id: str) -> Optional[float]:
+        """
+        Calculate composite score from multiple signals.
+        """
+        scores = []
+        weights = []
+
+        # 1. Pattern-based signal
+        pattern_signal = self._get_pattern_signal(narrative_id)
+        if pattern_signal is not None:
+            scores.append(pattern_signal)
+            weights.append(0.25)
+
+        # 2. Sentiment-event signal
+        sentiment_event_signal = self._get_sentiment_event_signal(narrative_id)
+        if sentiment_event_signal is not None:
+            scores.append(sentiment_event_signal)
+            weights.append(0.35)  # Higher weight for sentiment
+
+        # 3. Price momentum signal
+        momentum_signal = self._get_price_momentum_signal(narrative_id)
+        if momentum_signal is not None:
+            scores.append(momentum_signal)
+            weights.append(0.25)
+
+        # 4. Sentiment momentum signal
+        sentiment_momentum_signal = self._get_sentiment_momentum_signal(narrative_id)
+        if sentiment_momentum_signal is not None:
+            scores.append(sentiment_momentum_signal)
+            weights.append(0.15)
+
+        # Need at least 2 signals to generate position
+        if len(scores) < 2:
+            return None
+
+        # Calculate weighted average
+        total_weight = sum(weights[: len(scores)])
+        weighted_sum = sum(s * w for s, w in zip(scores, weights[: len(scores)]))
+
+        return weighted_sum / total_weight
+
+    def _get_pattern_signal(self, narrative_id: str) -> Optional[float]:
+        """
+        Original pattern-based signal generation (normalized to -1 to 1).
         """
         # Get current narrative details
         narrative_timestamp = ""
@@ -264,13 +322,179 @@ class NarrativeAgent:
         corr_matrix = np.corrcoef(price_positions, price_returns)
         pearson_r = corr_matrix[0, 1]
 
-        # Generate position based on correlation and current price position
+        # Generate signal based on correlation and current price position
         if current_price_position > 0.5 and pearson_r > 0:
-            return 1
+            return pearson_r  # Positive signal strength
         elif current_price_position < 0.5 and pearson_r < 0:
-            return -1
+            return pearson_r  # Negative signal strength
         else:
-            return 0
+            return 0.0
+
+    def _get_sentiment_event_signal(self, narrative_id: str) -> Optional[float]:
+        """
+        Generate signal based on sentiment-event combination performance.
+        """
+        current_narrative = None
+        for narrative in self.narratives_stored:
+            if narrative["ID"] == narrative_id:
+                current_narrative = narrative
+                break
+
+        if not current_narrative:
+            return None
+
+        sentiment = current_narrative.get("sentiment", "neutral")
+        event_type = current_narrative.get("event", "")
+
+        if sentiment == "neutral" or not event_type:
+            return 0.0
+
+        # Find similar sentiment-event combinations
+        similar_returns = []
+        for narrative in self.narratives_stored:
+            if narrative["timestamp"] >= current_narrative["timestamp"]:
+                continue
+
+            if (
+                narrative.get("sentiment") == sentiment
+                and narrative.get("event") == event_type
+            ):
+
+                ret = self.calculate_price_return(narrative["timestamp"])
+                if ret is not None:
+                    similar_returns.append(ret)
+
+        if len(similar_returns) < 3:  # Need sufficient history
+            return None
+
+        # Calculate average return and consistency
+        avg_return = np.mean(similar_returns)
+        std_return = np.std(similar_returns)
+
+        # Calculate signal strength (Sharpe-like ratio)
+        if std_return > 0:
+            signal_strength = avg_return / std_return
+        else:
+            signal_strength = np.sign(avg_return)
+
+        # Adjust for sentiment direction
+        if sentiment == "bullish":
+            return np.clip(signal_strength, -1, 1)
+        elif sentiment == "bearish":
+            return np.clip(-signal_strength, -1, 1)
+
+        return 0.0
+
+    def _get_price_momentum_signal(self, narrative_id: str) -> Optional[float]:
+        """
+        Generate signal based on price momentum at narrative time.
+        """
+        narrative_timestamp = ""
+        for narrative in self.narratives_stored:
+            if narrative["ID"] == narrative_id:
+                narrative_timestamp = narrative.get("timestamp", "")
+                break
+
+        if not narrative_timestamp:
+            return None
+
+        # Calculate short-term and long-term momentum
+        short_window = min(24, self.config.look_back_period // 2)
+        long_window = self.config.look_back_period
+
+        # Short-term momentum
+        short_start = (
+            datetime.fromisoformat(narrative_timestamp) - timedelta(hours=short_window)
+        ).isoformat()
+        short_prices = []
+        for ts, price in self.prices_stored:
+            if short_start <= ts <= narrative_timestamp:
+                short_prices.append(price)
+
+        if len(short_prices) < 2:
+            return None
+
+        short_momentum = (short_prices[-1] - short_prices[0]) / short_prices[0]
+
+        # Long-term momentum
+        long_start = (
+            datetime.fromisoformat(narrative_timestamp) - timedelta(hours=long_window)
+        ).isoformat()
+        long_prices = []
+        for ts, price in self.prices_stored:
+            if long_start <= ts <= narrative_timestamp:
+                long_prices.append(price)
+
+        if len(long_prices) < 2:
+            return None
+
+        long_momentum = (long_prices[-1] - long_prices[0]) / long_prices[0]
+
+        # Generate signal: positive if short > long (momentum accelerating)
+        momentum_diff = short_momentum - long_momentum
+
+        # Normalize to -1 to 1 range
+        return np.tanh(momentum_diff * 10)  # Scale factor of 10 for sensitivity
+
+    def _get_sentiment_momentum_signal(self, narrative_id: str) -> Optional[float]:
+        """
+        Generate signal based on sentiment momentum (shift in narrative tone).
+        """
+        current_narrative = None
+        for narrative in self.narratives_stored:
+            if narrative["ID"] == narrative_id:
+                current_narrative = narrative
+                break
+
+        if not current_narrative:
+            return None
+
+        # Count sentiment in two windows: recent (6h) vs previous (6-12h)
+        current_time = datetime.fromisoformat(current_narrative["timestamp"])
+        recent_start = (current_time - timedelta(hours=6)).isoformat()
+        previous_start = (current_time - timedelta(hours=12)).isoformat()
+
+        recent_sentiment = {"bullish": 0, "bearish": 0, "neutral": 0}
+        previous_sentiment = {"bullish": 0, "bearish": 0, "neutral": 0}
+
+        for narrative in self.narratives_stored:
+            ts = narrative["timestamp"]
+            sentiment = narrative.get("sentiment", "neutral")
+
+            if recent_start <= ts <= current_narrative["timestamp"]:
+                recent_sentiment[sentiment] += 1
+            elif previous_start <= ts < recent_start:
+                previous_sentiment[sentiment] += 1
+
+        recent_total = sum(recent_sentiment.values())
+        previous_total = sum(previous_sentiment.values())
+
+        if recent_total < 2 or previous_total < 2:
+            return None
+
+        # Calculate sentiment scores
+        recent_score = (
+            recent_sentiment["bullish"] - recent_sentiment["bearish"]
+        ) / recent_total
+        previous_score = (
+            previous_sentiment["bullish"] - previous_sentiment["bearish"]
+        ) / previous_total
+
+        # Momentum is the change in sentiment
+        sentiment_momentum = recent_score - previous_score
+
+        # Align with current narrative sentiment
+        current_sentiment = current_narrative.get("sentiment", "neutral")
+        if current_sentiment == "bullish" and sentiment_momentum > 0:
+            return sentiment_momentum  # Bullish momentum confirmed
+        elif current_sentiment == "bearish" and sentiment_momentum < 0:
+            return -sentiment_momentum  # Bearish momentum confirmed
+        elif current_sentiment == "bullish" and sentiment_momentum < -0.3:
+            return -0.5  # Strong contrarian signal
+        elif current_sentiment == "bearish" and sentiment_momentum > 0.3:
+            return 0.5  # Strong contrarian signal
+        else:
+            return 0.0
 
     def check_stop_conditions(self, timestamp: str) -> None:
         """
