@@ -13,6 +13,7 @@ from .config import NarrativeAgentConfig
 from .position_manager import PositionManager
 from .transaction_costs import TransactionCostModel, TransactionCostBreakdown
 from .amm_pool import AMMPool
+from .strategy import CompositeStrategy, SignalGenerator
 
 __all__ = [
     "NarrativeAgent",
@@ -21,6 +22,8 @@ __all__ = [
     "TransactionCostModel",
     "TransactionCostBreakdown",
     "AMMPool",
+    "CompositeStrategy",
+    "SignalGenerator",
 ]
 
 __version__ = "1.1.0"  # Updated for enhanced transaction cost model
