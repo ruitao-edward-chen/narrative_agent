@@ -237,44 +237,89 @@ class NarrativeAgent:
 
     def _calculate_composite_score(self, narrative_id: str) -> Optional[float]:
         """
-        Calculate composite score from multiple signals.
+        Enhanced composite score with dynamic weight adjustment.
         """
-        scores = []
-        weights = []
+        # Get all signals including new ones
+        signals = {}
 
-        # 1. Pattern-based signal
+        # Original signals
         pattern_signal = self._get_pattern_signal(narrative_id)
         if pattern_signal is not None:
-            scores.append(pattern_signal)
-            weights.append(0.25)
+            signals["pattern"] = pattern_signal
 
-        # 2. Sentiment-event signal
         sentiment_event_signal = self._get_sentiment_event_signal(narrative_id)
         if sentiment_event_signal is not None:
-            scores.append(sentiment_event_signal)
-            weights.append(0.35)  # Higher weight for sentiment
+            signals["sentiment_event"] = sentiment_event_signal
 
-        # 3. Price momentum signal
-        momentum_signal = self._get_price_momentum_signal(narrative_id)
-        if momentum_signal is not None:
-            scores.append(momentum_signal)
-            weights.append(0.25)
+        price_momentum_signal = self._get_price_momentum_signal(narrative_id)
+        if price_momentum_signal is not None:
+            signals["price_momentum"] = price_momentum_signal
 
-        # 4. Sentiment momentum signal
         sentiment_momentum_signal = self._get_sentiment_momentum_signal(narrative_id)
         if sentiment_momentum_signal is not None:
-            scores.append(sentiment_momentum_signal)
-            weights.append(0.15)
+            signals["sentiment_momentum"] = sentiment_momentum_signal
 
-        # Need at least 2 signals to generate position
-        if len(scores) < 2:
+        # New enhanced signals
+        volatility_signal = self._get_volatility_regime_signal(narrative_id)
+        if volatility_signal is not None:
+            signals["volatility_regime"] = volatility_signal
+
+        clustering_signal = self._get_narrative_clustering_signal(narrative_id)
+        if clustering_signal is not None:
+            signals["narrative_clustering"] = clustering_signal
+
+        # Need at least 2 signals
+        if len(signals) < 2:
             return None
 
-        # Calculate weighted average
-        total_weight = sum(weights[: len(scores)])
-        weighted_sum = sum(s * w for s, w in zip(scores, weights[: len(scores)]))
+        # Get current narrative for market condition check
+        current_narrative = None
+        for narrative in self.narratives_stored:
+            if narrative["ID"] == narrative_id:
+                current_narrative = narrative
+                break
 
-        return weighted_sum / total_weight
+        if not current_narrative:
+            return None
+
+        # Dynamic weights based on market condition
+        market_condition = self._get_market_condition(current_narrative["timestamp"])
+
+        # Default weights
+        weights = {
+            "pattern": 0.20,
+            "sentiment_event": 0.25,
+            "price_momentum": 0.20,
+            "sentiment_momentum": 0.15,
+            "volatility_regime": 0.10,
+            "narrative_clustering": 0.10,
+        }
+
+        # Adjust weights based on market condition
+        if market_condition is not None:
+            if market_condition > 0.5:
+                # Bullish market: weight momentum signals higher
+                weights["price_momentum"] = 0.30
+                weights["sentiment_event"] = 0.20
+                weights["pattern"] = 0.15
+            elif market_condition < -0.5:
+                # Bearish market: weight sentiment and volatility higher
+                weights["sentiment_event"] = 0.35
+                weights["volatility_regime"] = 0.15
+                weights["price_momentum"] = 0.10
+
+        # Calculate weighted score
+        total_weight = sum(weights.get(k, 0.1) for k in signals.keys())
+        weighted_sum = sum(signals[k] * weights.get(k, 0.1) for k in signals.keys())
+
+        composite_score = weighted_sum / total_weight if total_weight > 0 else 0
+
+        # Apply volatility adjustment
+        if "volatility_regime" in signals:
+            # In high volatility, reduce position size
+            composite_score *= 1 + signals["volatility_regime"] * 0.2
+
+        return np.clip(composite_score, -1, 1)
 
     def _get_pattern_signal(self, narrative_id: str) -> Optional[float]:
         """
@@ -495,6 +540,179 @@ class NarrativeAgent:
             return 0.5  # Strong contrarian signal
         else:
             return 0.0
+
+    def _get_market_condition(self, timestamp: str) -> Optional[float]:
+        """
+        Determine market condition: bullish (+1) or bearish (-1).
+        Uses multiple timeframes and indicators.
+        """
+        # Calculate multiple moving averages
+        ma_periods = [24, 72, 168]  # 1 day, 3 days, 1 week
+        ma_values = []
+
+        for period in ma_periods:
+            start_time = (
+                datetime.fromisoformat(timestamp) - timedelta(hours=period)
+            ).isoformat()
+
+            prices = []
+            for ts, price in self.prices_stored:
+                if start_time <= ts <= timestamp:
+                    prices.append(price)
+
+            if len(prices) > period // 2:
+                ma_values.append(np.mean(prices))
+            else:
+                return None
+
+        if len(ma_values) < len(ma_periods):
+            return None
+
+        current_price = self.get_price_at_timestamp(timestamp)
+        if current_price is None:
+            return None
+
+        # Market condition score
+        score = 0.0
+
+        # Price vs MAs
+        for i, ma in enumerate(ma_values):
+            weight = 1 / (i + 1)  # Shorter MAs have higher weight
+            if current_price > ma:
+                score += weight
+            else:
+                score -= weight
+
+        # MA alignment (shorter > longer = bullish)
+        if len(ma_values) >= 2:
+            for i in range(len(ma_values) - 1):
+                if ma_values[i] > ma_values[i + 1]:
+                    score += 0.3
+                else:
+                    score -= 0.3
+
+        return np.tanh(score)  # Normalize to [-1, 1]
+
+    def _get_volatility_regime_signal(self, narrative_id: str) -> Optional[float]:
+        """
+        Generate signal based on volatility regime.
+        High volatility + bearish = stronger bearish signal
+        Low volatility + trend following = stronger signal
+        """
+        narrative_timestamp = ""
+        for narrative in self.narratives_stored:
+            if narrative["ID"] == narrative_id:
+                narrative_timestamp = narrative.get("timestamp", "")
+                break
+
+        if not narrative_timestamp:
+            return None
+
+        # Calculate realized volatility
+        vol_window = min(48, self.config.look_back_period)
+        start_time = (
+            datetime.fromisoformat(narrative_timestamp) - timedelta(hours=vol_window)
+        ).isoformat()
+
+        prices = []
+        for ts, price in self.prices_stored:
+            if start_time <= ts <= narrative_timestamp:
+                prices.append(price)
+
+        if len(prices) < 10:
+            return None
+
+        # Calculate hourly returns
+        returns = np.diff(prices) / prices[:-1]
+        current_vol = np.std(returns) * np.sqrt(24)  # Annualized
+
+        # Calculate historical average volatility (simplified version)
+        # Use percentile approach
+        if current_vol > 0.5:  # High volatility threshold
+            return -0.3  # Reduce position confidence
+        elif current_vol < 0.2:  # Low volatility threshold
+            return 0.3  # Increase confidence
+        else:
+            return 0.0
+
+    def _get_narrative_clustering_signal(self, narrative_id: str) -> Optional[float]:
+        """
+        Advanced signal based on narrative clustering and regime detection.
+        Groups narratives into clusters and identifies regime-specific patterns.
+        """
+        current_narrative = None
+        for narrative in self.narratives_stored:
+            if narrative["ID"] == narrative_id:
+                current_narrative = narrative
+                break
+
+        if not current_narrative:
+            return None
+
+        # Define narrative "fingerprint" based on keywords, sentiment, and event
+        current_keywords = set(current_narrative.get("pattern_keywords", []))
+        current_sentiment = current_narrative.get("sentiment", "neutral")
+        current_event = current_narrative.get("event", "")
+
+        # Find narratives with similar fingerprints
+        similar_narratives = []
+        for narrative in self.narratives_stored:
+            if narrative["timestamp"] >= current_narrative["timestamp"]:
+                continue
+
+            # Calculate similarity score
+            keywords_overlap = len(
+                current_keywords.intersection(
+                    set(narrative.get("pattern_keywords", []))
+                )
+            )
+
+            sentiment_match = (
+                1 if narrative.get("sentiment") == current_sentiment else 0
+            )
+            event_match = 1 if narrative.get("event") == current_event else 0
+
+            similarity = (
+                keywords_overlap * 0.5 + sentiment_match * 0.3 + event_match * 0.2
+            )
+
+            if similarity > 1.5:  # Threshold for similarity
+                similar_narratives.append(narrative)
+
+        if len(similar_narratives) < 3:
+            return None
+
+        # Analyze performance in different market conditions
+        bullish_market_returns = []
+        bearish_market_returns = []
+
+        for narrative in similar_narratives:
+            # Determine market condition at narrative time
+            market_condition = self._get_market_condition(narrative["timestamp"])
+            ret = self.calculate_price_return(narrative["timestamp"])
+
+            if ret is not None and market_condition is not None:
+                if market_condition > 0:
+                    bullish_market_returns.append(ret)
+                else:
+                    bearish_market_returns.append(ret)
+
+        # Get current market condition
+        current_market = self._get_market_condition(current_narrative["timestamp"])
+        if current_market is None:
+            return None
+
+        # Generate signal based on historical performance in similar market conditions
+        if current_market > 0 and len(bullish_market_returns) >= 2:
+            avg_return = np.mean(bullish_market_returns)
+            consistency = 1 / (np.std(bullish_market_returns) + 0.01)
+            return np.tanh(avg_return * consistency * 5)
+        elif current_market < 0 and len(bearish_market_returns) >= 2:
+            avg_return = np.mean(bearish_market_returns)
+            consistency = 1 / (np.std(bearish_market_returns) + 0.01)
+            return np.tanh(avg_return * consistency * 5)
+
+        return 0.0
 
     def check_stop_conditions(self, timestamp: str) -> None:
         """
