@@ -3,15 +3,8 @@ Example backtest script for NarrativeAgent with enhanced transaction costs.
 """
 
 import os
-import sys
-from pathlib import Path
 from datetime import datetime, timedelta
 from matplotlib import pyplot as plt
-
-# Add parent directory to path to import narrative_agent
-parent_dir = Path(__file__).resolve().parent.parent
-if str(parent_dir) not in sys.path:
-    sys.path.insert(0, str(parent_dir))
 
 from src.narrative_agent import NarrativeAgent, NarrativeAgentConfig
 

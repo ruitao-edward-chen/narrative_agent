@@ -7,11 +7,11 @@ from datetime import datetime, timedelta
 import numpy as np
 from pandas import DataFrame
 
-from .config import NarrativeAgentConfig
-from .position_manager import PositionManager
-from .transaction_costs import TransactionCostModel
-from .data import DataFetcher
-from .strategy import CompositeStrategy, get_market_condition
+from src.narrative_agent.config import NarrativeAgentConfig
+from src.narrative_agent.position_manager import PositionManager
+from src.narrative_agent.transaction_costs import TransactionCostModel
+from src.narrative_agent.data import DataFetcher
+from src.narrative_agent.strategy import CompositeStrategy, get_market_condition
 
 
 class NarrativeAgent:
@@ -377,7 +377,7 @@ class NarrativeAgent:
         # Calculate annualized volatility
         if len(df) > 1:
             period_std = df["position_return"].std(ddof=1)
-            annualized_vol = period_std * np.sqrt(365 * 24 / self.config.hold_period)
+            annualized_vol = period_std * np.sqrt(365 * 24 * 60)
             df["vol_annualized"] = annualized_vol
         else:
             df["vol_annualized"] = 0.0

@@ -5,7 +5,7 @@ SentiChain API client for fetching narratives and market data.
 from typing import Dict, List, Optional, Any
 import requests
 
-from ..utils import parse_json_string
+from src.narrative_agent.utils import parse_json_string
 
 
 class SentiChainClient:

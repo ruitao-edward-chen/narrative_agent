@@ -42,7 +42,7 @@ class AMMPool:
         amount_in_with_fee = amount_in * (1 - self.fee_tier)
 
         if is_base_to_quote:
-            # Swapping base (e.g., BTC) for quote (USD)
+            # Swapping base (e.g. BTC) for quote (USD)
             new_reserve_base = self.reserve_base + amount_in_with_fee
             new_reserve_quote = self.k / new_reserve_base
             amount_out = self.reserve_quote - new_reserve_quote
@@ -79,14 +79,14 @@ class AMMPool:
         if is_buy:
             # Buying base asset with USD
             amount_in = position_value_usd
-            _, price_impact, effective_price = self.calculate_swap_amounts(
+            _, _, effective_price = self.calculate_swap_amounts(
                 amount_in, is_base_to_quote=False
             )
             slippage = (effective_price - current_price) / current_price
         else:
             # Selling base asset for USD
             amount_in = position_value_usd / current_price
-            _, price_impact, effective_price = self.calculate_swap_amounts(
+            _, _, effective_price = self.calculate_swap_amounts(
                 amount_in, is_base_to_quote=True
             )
             slippage = (current_price - effective_price) / current_price

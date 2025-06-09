@@ -27,7 +27,7 @@ class NarrativeAgentConfig:
     """In basis points."""
 
     # Enhanced transaction cost parameters
-    gas_fee_usd: float = 50.0
+    gas_fee_usd: float = 1.0
     """Gas cost per transaction in USD."""
 
     amm_liquidity_usd: float = 100_000_000.0

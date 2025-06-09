@@ -5,7 +5,7 @@ Enhanced Transaction Cost Model for DeFi Trading.
 from typing import Dict, Any
 from dataclasses import dataclass
 
-from .amm_pool import AMMPool
+from src.narrative_agent.amm_pool import AMMPool
 
 
 @dataclass
@@ -38,7 +38,7 @@ class TransactionCostModel:
 
     def __init__(
         self,
-        gas_fee_usd: float = 50.0,
+        gas_fee_usd: float = 1.0,
         amm_liquidity_usd: float = 100_000_000.0,
         amm_fee_tier: float = 0.003,
         position_size_usd: float = 10_000.0,

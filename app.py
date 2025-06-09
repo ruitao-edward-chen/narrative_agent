@@ -156,7 +156,7 @@ async def run_backtest_async(
             use_enhanced_costs=config.agent_config.use_enhanced_costs,
         )
 
-        agent = NarrativeAgent(agent_config, config.agent_config.api_key, False)
+        agent = NarrativeAgent(agent_config, config.agent_config.api_key, True)
 
         # Run backtest
         start_date = config.start_date

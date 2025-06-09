@@ -4,9 +4,9 @@ Pre-processed data fetching functions for narratives and prices.
 
 from typing import Dict, List, Tuple, Any
 
-from .client import SentiChainClient
-from .cache import DataCache
-from ..utils import calculate_chunk_ranges
+from src.narrative_agent.data.client import SentiChainClient
+from src.narrative_agent.data.cache import DataCache
+from src.narrative_agent.utils import calculate_chunk_ranges
 
 
 class DataFetcher:

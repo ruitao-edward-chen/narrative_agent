@@ -359,9 +359,9 @@ class VolatilityRegimeSignal(SignalGenerator):
         if len(prices) < 10:
             return None
 
-        # Calculate hourly returns
+        # Calculate period returns
         returns = np.diff(prices) / prices[:-1]
-        current_vol = np.std(returns) * np.sqrt(24)  # Annualized
+        current_vol = np.std(returns) * np.sqrt(365 * 24 * 60)
 
         # Use percentile approach
         if current_vol > 0.5:  # High volatility threshold
