@@ -405,6 +405,11 @@ function App() {
                       value={config.start_date}
                       onChange={(e) => {
                         const newDate = e.target.value;
+                        const minDate = '2025-01-31';
+                        if (newDate < minDate) {
+                          toast.error('Start date cannot be earlier than Jan 31, 2025');
+                          return;
+                        }
                         if (validateDates(newDate, config.num_days)) {
                           setConfig({...config, start_date: newDate});
                         } else {
