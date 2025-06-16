@@ -1,6 +1,6 @@
 # Narrative Agent
 
-An algorithmic trading agent that analyzes market narratives and their associated price movements to make trading decisions, with a web-based UI (http://34.216.205.222:8000/) for configuration, backtesting and real-time performance visualization.
+An algorithmic trading agent that analyzes market narratives and their associated price movements to make trading decisions, with a web-based UI for configuration, backtesting and real-time performance visualization.
 
 ## Overview
 
